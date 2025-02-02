@@ -1,6 +1,9 @@
 import Foundation
 import ObjectMapper
 
+// Update the alias to use the correct thread model (defined in Threads.swift).
+typealias ThreadType = Threads
+
 struct IPSConverter {
     func convert(inputPath: String, outputPath: String?) throws {
         // Read input file
@@ -115,232 +118,16 @@ struct IPSConverter {
             output += "\n\nTriggered by Thread:  \(finalTriggeredThread)"
         }
         
-        var crashedThreadNumber: Int?
-
-        // Updated thread dump extraction: try to use thread info from header or bodyModel.
-        let threadDump: String = {
-            // match this format:
-            // Thread 0::  Dispatch queue: com.apple.main-thread
-            var allThreadsDump = ""
-
-            // count and print the threads
-            let threadCount = bodyModel?.threads?.count ?? 0
-            
-            var currentThreadNumber = 0
-            for thread in bodyModel?.threads ?? [] {
-                var currentThread = ""
-
-                currentThread += "Thread \(currentThreadNumber)"
-                
-                if thread.triggered {
-                    currentThread += " Crashed"
-                    crashedThreadNumber = currentThreadNumber
-                }
-
-                currentThread += ":"
-                
-                if let threadQueue = thread.queue {
-                    currentThread += ":  Dispatch queue: \(threadQueue)"
-                } else if let threadName = thread.name {
-                    currentThread += ": \(threadName)"
-                }           
-
-                // todo: frames in the thread
-                var currentFrameNumber = 0
-                for frame in thread.frames ?? [] {
-                    // we have
-                    /*
-                    var imageOffset : Int?
-                    var symbol : String?
-                    var symbolLocation : Int?
-                    var imageIndex : Int?
-                    */
-                    
-                    // and we want to show it in this format:
-                    // 0   libobjc.A.dylib               	       0x180069ee8 objc_release + 116
-
-                    if let imageOffset = frame.imageOffset,
-                       let imageIndex = frame.imageIndex {
-                        let symbolLocation = frame.symbolLocation 
-                        let imageOffset = frame.imageOffset
-
-                        let image = bodyModel?.usedImages?[imageIndex]
-                        var currentFrame = "\n\(currentFrameNumber)"
-                        // add spaces so the next column is at 4 characters
-                        var spacesToAdd = 4 - currentFrame.count
-                        if spacesToAdd > 0 {
-                            currentFrame += String(repeating: " ", count: spacesToAdd)
-                        }
-                        currentFrame += " \(image?.name ?? "Unknown")"
-                        
-                        // add spaces so the next column is at 44 characters
-                        spacesToAdd = 35 - currentFrame.count
-                        if spacesToAdd > 0 {
-                            currentFrame += String(repeating: " ", count: spacesToAdd)
-                        }
-                        currentFrame += "\t       "
-
-                        let imageBase = image?.base ?? 0
-                        let imageBaseHex = String(format: "0x%llx", imageBase)
-
-                        let imageLocation = imageBase + (imageOffset ?? 0)
-                        let imageLocationHex = String(format: "0x%llx", imageLocation)
-
-                        currentFrame += "\(imageLocationHex)"
-                        
-                        if let symbol = frame.symbol {
-                            currentFrame += " \(symbol)"
-                            if let symbolLocation {
-                                currentFrame += " + \(symbolLocation)"
-                            }
-                        } else if let imageBase = image?.base {
-                           currentFrame += " \(imageBaseHex)"
-                           if let imageOffset {
-                             currentFrame += " + \(imageOffset)"
-                           }
-                        }
-
-                        if let sourceFile = frame.sourceFile,
-                           let sourceLine = frame.sourceLine {
-                            currentFrame += " (\(sourceFile):\(sourceLine))"
-                        } else if frame.inline {
-                            currentFrame += " [inlined]"
-                        }
-
-                        currentThread += currentFrame
-                        currentFrameNumber += 1
-                    }
-                }
-
-                allThreadsDump += currentThread + "\n\n"
-                currentThreadNumber += 1
-            }
-
-            return allThreadsDump
-        }()
+        // Use helper to generate thread dump and capture crashed thread number.
+        let (threadDump, crashedThreadNumber) = generateThreadDump(from: bodyModel)
         output += "\n\n\(threadDump)"
         
-        // Crashed thread ARM Thread State (64-bit):
-        // Thread 13 crashed with ARM Thread State (64-bit):
+        // Generate thread state if available.
         if let triggeredThread = bodyModel?.threads?.first(where: { $0.triggered }) {
-            var threadStateString: String
-            var flavorString = triggeredThread.threadState?.flavor ?? ""
-            switch flavorString {
-                case "ARM_THREAD_STATE":
-                    flavorString = "ARM Thread State"
-                case "ARM_THREAD_STATE64":
-                    flavorString = "ARM Thread State (64-bit)"
-                default:
-                    break
-            }
-
-            threadStateString = "Thread \(crashedThreadNumber ?? triggeredThread.id ?? 0) crashed with \(flavorString):"
-
+            let threadStateString = generateThreadState(for: triggeredThread, crashedThreadNumber: crashedThreadNumber)
             output += "\n\(threadStateString)\n"
-
-            var stateDict = [String: String]()
-
-            // x registers
-            var xIndex = 0
-            for xObject in triggeredThread.threadState?.x ?? [] {
-                // append in this format
-                // x0: 0x0000000000000001
-                let valueHex = String(format: "0x%016llx", xObject.value ?? 0)
-                stateDict["x\(xIndex)"] = valueHex
-                xIndex += 1
-            }
-
-            // fp: 0x00000001702487e0   lr: 0x000000011ecc5ab0
-            // sp: 0x00000001702487c0   pc: 0x000000011ecc5adc cpsr: 0xa0001000
-            // far: 0x0000000000000000  esr: 0xf2000001 (Breakpoint) brk 1
-
-            if let fpValue = triggeredThread.threadState?.fp?.value {
-                let fpHex = String(format: "0x%016llx", fpValue)
-                stateDict["fp"] = fpHex
-            }
-
-            if let lrValue = triggeredThread.threadState?.lr?.value {
-                let lrHex = String(format: "0x%016llx", lrValue)
-                stateDict["lr"] = lrHex
-            }
-
-            if let spValue = triggeredThread.threadState?.sp?.value {
-                let spHex = String(format: "0x%016llx", spValue)
-                stateDict["sp"] = spHex
-            }
-
-            if let pcValue = triggeredThread.threadState?.pc?.value {
-                let pcHex = String(format: "0x%016llx", pcValue)
-                stateDict["pc"] = pcHex
-            }
-
-            if let cpsrValue = triggeredThread.threadState?.cpsr?.value {
-                let cpsrHex = String(format: "0x%08x", cpsrValue)
-                stateDict["cpsr"] = cpsrHex
-            }
-
-            if let farValue = triggeredThread.threadState?.far?.value {
-                let farHex = String(format: "0x%016llx", farValue)
-                stateDict["far"] = farHex
-            }
-
-            if let esrValue = triggeredThread.threadState?.esr?.value {
-                let esrHex = String(format: "0x%08x", esrValue)
-                stateDict["esr"] = "\(esrHex) \(triggeredThread.threadState?.esr?.description ?? "")"
-            }
-
-            // 4 rows
-            var rowIndex = 0
-            var rowString = ""
-            var keyOrder = ["x", "fp", "lr", "sp", "pc", "cpsr", "far", "esr"]
-            // sort the stateDict's keys with our key order, where the x registers are first and ordered from 0 to 999
-            let sortedKeys = stateDict.keys.sorted { (key1, key2) -> Bool in
-                let key1Prefix = key1.prefix(1)
-                let key2Prefix = key2.prefix(1)
-                if key1Prefix == key2Prefix && key1Prefix == "x" {
-                    let key1Int = Int(key1.dropFirst()) ?? 0
-                    let key2Int = Int(key2.dropFirst()) ?? 0
-                    return key1Int < key2Int
-                } else {
-                    // x keys go before the non x keys, follow the keyOrder
-                    let processedKey1Prefix = key1Prefix == "x" ? "x" : key1
-                    let processedKey2Prefix = key2Prefix == "x" ? "x" : key2
-
-                    if let key1Index = keyOrder.firstIndex(of: processedKey1Prefix),
-                       let key2Index = keyOrder.firstIndex(of: processedKey2Prefix) {
-                        return key1Index < key2Index
-                    } else {
-                        return key1 < key2
-                    }                
-                }
-            }
-
-            for key in sortedKeys {
-                let value = stateDict[key]
-                let desiredColonIndex = 6 + 25 * rowIndex
-
-                // add spaces so the next column is at the desired index
-                let spacesToAdd = desiredColonIndex - rowString.count - key.count
-                if spacesToAdd > 0 {
-                    rowString += String(repeating: " ", count: spacesToAdd)
-                }
-
-                if let rowValue = stateDict[key] {
-                    rowString += "\(key): \(rowValue)"
-                }
-
-                rowIndex += 1
-
-                let desiredRowCount = key.prefix(1) == "x" ? 4 : 3
-                if rowIndex == desiredRowCount {
-                    rowIndex = 0
-                    output += "\(rowString)\n"
-                    rowString = ""
-                }
-            }
-            output += "\(rowString)\n"
         }
-
+        
         output += "\nBinary Images:"
         // Updated loop with formatted spacing
         for image in bodyModel?.usedImages ?? [] {
@@ -384,6 +171,162 @@ struct IPSConverter {
         // In case the body spans multiple paragraphs, join them back.
         return (header: components[0], body: components.dropFirst().joined(separator: "\n"))
     }
+
+    // MARK: - Private Helpers
+    
+    // Generates the thread dump and captures the crashed thread number.
+    private func generateThreadDump(from bodyModel: Json4Swift_Base?) -> (String, Int?) {
+        var allThreadsDump = ""
+        var crashedThreadNumber: Int?
+        var currentThreadNumber = 0
+        
+        for thread in bodyModel?.threads ?? [] {
+            // Updated header: always use a double colon and omit " Crashed"
+            var currentThread = "Thread \(currentThreadNumber)"
+            if thread.triggered {
+                crashedThreadNumber = currentThreadNumber
+                currentThread += " Crashed"
+            }
+            
+            currentThread += ":"
+            if let threadQueue = thread.queue {
+                currentThread += ":  Dispatch queue: \(threadQueue)"
+            } else if let threadName = thread.name {
+                currentThread += ": \(threadName)"
+            }
+
+            
+            // Append frames for current thread.
+            var frameNumber = 0
+            for frame in thread.frames ?? [] {
+                if let imageOffset = frame.imageOffset,
+                   let imageIndex = frame.imageIndex {
+                    let image = bodyModel?.usedImages?[imageIndex]
+                    var frameLine = "\n\(frameNumber)"
+                    // Align first column.
+                    let spaces1 = max(4 - frameLine.count, 0)
+                    frameLine += String(repeating: " ", count: spaces1)
+                    frameLine += " \(image?.name ?? "Unknown")"
+                    let spaces2 = max(35 - frameLine.count, 0)
+                    frameLine += String(repeating: " ", count: spaces2)
+                    frameLine += "\t       "
+                    
+                    let imageBase = image?.base ?? 0
+                    let imageLocation = imageBase + imageOffset
+                    let imageLocationHex = String(format: "0x%llx", imageLocation)
+                    
+                    frameLine += imageLocationHex
+                    if let symbol = frame.symbol {
+                        frameLine += " \(symbol)"
+                        if let symbolLocation = frame.symbolLocation {
+                            frameLine += " + \(symbolLocation)"
+                        }
+                    } else if let imageBase = image?.base {
+                        let imageBaseHex = String(format: "0x%llx", imageBase)
+                        frameLine += " \(imageBaseHex)"
+                        frameLine += " + \(imageOffset)"
+                    }
+                    
+                    if let sourceFile = frame.sourceFile,
+                       let sourceLine = frame.sourceLine {
+                        frameLine += " (\(sourceFile):\(sourceLine))"
+                    } else if frame.inline {
+                        frameLine += " [inlined]"
+                    }
+                    
+                    currentThread += frameLine
+                    frameNumber += 1
+                }
+            }
+            allThreadsDump += currentThread + "\n\n"
+            currentThreadNumber += 1
+        }
+        return (allThreadsDump, crashedThreadNumber)
+    }
+    
+    // Generates the thread state string for a crashed thread.
+    private func generateThreadState(for triggeredThread: ThreadType, crashedThreadNumber: Int?) -> String {
+        var threadStateOutput = ""
+        var flavor = triggeredThread.threadState?.flavor ?? ""
+        switch flavor {
+            case "ARM_THREAD_STATE":
+                flavor = "ARM Thread State"
+            case "ARM_THREAD_STATE64":
+                flavor = "ARM Thread State (64-bit)"
+            default:
+                break
+        }
+        
+        let threadID = crashedThreadNumber ?? triggeredThread.id ?? 0
+        threadStateOutput += "Thread \(threadID) crashed with \(flavor):\n"
+        
+        var stateDict = [String: String]()
+        // Format x registers.
+        var xIndex = 0
+        for xObject in triggeredThread.threadState?.x ?? [] {
+            let valueHex = String(format: "0x%016llx", xObject.value ?? 0)
+            stateDict["x\(xIndex)"] = valueHex
+            xIndex += 1
+        }
+        // Other registers.
+        if let fpValue = triggeredThread.threadState?.fp?.value {
+            stateDict["fp"] = String(format: "0x%016llx", fpValue)
+        }
+        if let lrValue = triggeredThread.threadState?.lr?.value {
+            stateDict["lr"] = String(format: "0x%016llx", lrValue)
+        }
+        if let spValue = triggeredThread.threadState?.sp?.value {
+            stateDict["sp"] = String(format: "0x%016llx", spValue)
+        }
+        if let pcValue = triggeredThread.threadState?.pc?.value {
+            stateDict["pc"] = String(format: "0x%016llx", pcValue)
+        }
+        if let cpsrValue = triggeredThread.threadState?.cpsr?.value {
+            stateDict["cpsr"] = String(format: "0x%08x", cpsrValue)
+        }
+        if let farValue = triggeredThread.threadState?.far?.value {
+            stateDict["far"] = String(format: "0x%016llx", farValue)
+        }
+        if let esrValue = triggeredThread.threadState?.esr?.value {
+            let esrHex = String(format: "0x%08x", esrValue)
+            stateDict["esr"] = "\(esrHex) \(triggeredThread.threadState?.esr?.description ?? "")"
+        }
+        
+        // Order keys.
+        var rowIndex = 0
+        var rowString = ""
+        let keyOrder = ["x", "fp", "lr", "sp", "pc", "cpsr", "far", "esr"]
+        let sortedKeys = stateDict.keys.sorted { key1, key2 in
+            let isX1 = key1.starts(with: "x")
+            let isX2 = key2.starts(with: "x")
+            if isX1 && isX2 {
+                let int1 = Int(key1.dropFirst()) ?? 0
+                let int2 = Int(key2.dropFirst()) ?? 0
+                return int1 < int2
+            } else {
+                let idx1 = keyOrder.firstIndex(where: { key1.starts(with: $0) }) ?? 100
+                let idx2 = keyOrder.firstIndex(where: { key2.starts(with: $0) }) ?? 100
+                return idx1 < idx2
+            }
+        }
+        
+        for key in sortedKeys {
+            let desiredColonIndex = 6 + 25 * rowIndex
+            let spaces = max(desiredColonIndex - rowString.count - key.count, 0)
+            rowString += String(repeating: " ", count: spaces)
+            rowString += "\(key): \(stateDict[key]!)"
+            rowIndex += 1
+            
+            let desiredRowCount = key.starts(with: "x") ? 4 : 3
+            if rowIndex == desiredRowCount {
+                threadStateOutput += "\(rowString)\n"
+                rowIndex = 0
+                rowString = ""
+            }
+        }
+        threadStateOutput += rowString
+        return threadStateOutput
+    }
 }
 
 // MARK: - Error Types
@@ -422,7 +365,5 @@ struct IPSHeader: Codable {
     let termination: String?
     let terminatingProcess: String?
     let triggeredThread: String?
-    let threads: String?
-    
-    // Note: Add any additional keys that Json4Swift_Base might need to mirror.
+    let threads: String?    
 }
