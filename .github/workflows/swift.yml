@@ -28,7 +28,7 @@ jobs:
       - name: Build Release
         run: swift build -c release -v
       - name: Archive product
-        run: cd .build/release && zip -r ../../release.zip ips2crashlog
+        run: zip -r -j release.zip .build/release/ips2crashlog
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v1
