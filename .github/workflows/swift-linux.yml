@@ -64,7 +64,7 @@ jobs:
       - name: Archive product
         run: zip -r -j release-linux.zip .build/release/ips2crashlog
       - name: Upload Linux Build Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-linux
           path: ./release-linux.zip
