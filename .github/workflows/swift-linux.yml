@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Swift
-        uses: slashmo/install-swift@v0.4.0
+        uses: lapfelix/install-swift@main
         with:
           version: '6.0.3'
       - name: Build
