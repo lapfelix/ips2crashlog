@@ -1,4 +1,4 @@
-name: Swift CI Linux
+name: Swift CI
 
 on:
   push:
@@ -53,10 +53,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Swift
-        uses: fwal/setup-swift@v1
+      - name: Install Swift
+        uses: slashmo/install-swift@v0.1.0
         with:
-          swift-version: '5.9'
+          version: '5.9'
       - name: Build
         run: swift build -v
       - name: Run tests
@@ -64,7 +64,7 @@ jobs:
       - name: Archive product
         run: zip -r -j release-linux.zip .build/release/ips2crashlog
       - name: Upload Linux Build Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: release-linux
           path: ./release-linux.zip
