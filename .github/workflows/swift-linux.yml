@@ -39,7 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -56,9 +56,9 @@ jobs:
       - name: Install Swift
         uses: lapfelix/install-swift@main
         with:
-          version: '6.0.3'
-      - name: Build
-        run: swift build -v
+          version: '5.9'
+      - name: Build Release
+        run: swift build -c release -v
       - name: Run tests
         run: swift test -v
       - name: Archive product
