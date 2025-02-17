@@ -8,6 +8,12 @@ Command line tool that converts Apple generated .ips crash logs to human readabl
 swift build -c release
 ```
 
+## Build on Linux
+
+```bash
+swift build -Xswiftc -static-stdlib -c release -v
+```
+
 ## Usage
 
 ```bash
@@ -28,3 +34,14 @@ The suite of tests is currently one test that compares the output of the tool wi
 ```bash
 swift test
 ```
+
+## Tests on Linux
+
+```bash
+swift test -v
+```
+
+## GitHub Actions Workflow
+
+The `linux-build` job in the GitHub Actions workflow is configured to build and upload an artifact on Linux.
+
