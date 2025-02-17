@@ -39,7 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -47,3 +47,24 @@ jobs:
           asset_path: ./release.zip
           asset_name: release.zip
           asset_content_type: application/zip
+
+  linux-build:
+    name: Linux Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        uses: lapfelix/install-swift@main
+        with:
+          version: '5.9'
+      - name: Build Release
+        run: swift build -static-stdlib -c release -v
+      - name: Run tests
+        run: swift test -v
+      - name: Archive product
+        run: zip -r -j release-linux.zip .build/release/ips2crashlog
+      - name: Upload Linux Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: ./release-linux.zip
