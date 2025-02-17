@@ -58,7 +58,7 @@ jobs:
         with:
           version: '5.9'
       - name: Build Release
-        run: swift build -static-stdlib -c release -v
+        run: swift build -Xswiftc -static-stdlib -c release -v
       - name: Run tests
         run: swift test -v
       - name: Archive product
