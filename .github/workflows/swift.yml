@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: sudo apt-get install -y libcurl4-openssl-dev
+        run: sudo apt-get install -y libcurl4-openssl-dev libssl-dev
       - name: Install Swift
         uses: lapfelix/install-swift@main
         with:
