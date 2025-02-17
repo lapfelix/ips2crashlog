@@ -68,3 +68,17 @@ jobs:
         with:
           name: release-linux
           path: ./release-linux.zip
+
+  test-on-pr:
+    name: Test on PR
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        uses: lapfelix/install-swift@main
+        with:
+          version: '5.9'
+      - name: Build Release
+        run: swift build -Xswiftc -static-stdlib -c release -v
+      - name: Run tests
+        run: swift test -v
